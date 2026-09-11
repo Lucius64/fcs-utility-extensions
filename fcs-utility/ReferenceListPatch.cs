@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
@@ -48,13 +49,13 @@ namespace fcs_utility
 
             ___openItem.Visible = true;
             ___copyID.Visible = true;
-            ___revertItem.Visible = id != null && __instance.Item.getState(grid.SelectedSection.Name, id).HasFlag(GameData.State.MODIFIED);
+            ___revertItem.Visible = id != null && __instance.Item.getState(grid.SelectedSection.Name, id).HasFlag((Enum)Enum.Parse(AccessTools.TypeByName("forgotten_construction_set.GameData+State"), "MODIFIED"));
             ___removeItem.Visible = true;
-            ___replaceWithCopy.Visible = item != null && item.type != itemType.DIALOGUE && item.type != itemType.DIALOGUE_LINE;
+            ___replaceWithCopy.Visible = item != null && (int)item.type != 18 && (int)item.type != 19;
             ___removeSection.Visible = false;
             ___referenceInfo.Visible = true;
 
-            Color color = (Color)AccessTools.Method("forgotten_construction_set.StateColours:GetStateColor").Invoke(null, new object[] { GameData.State.LOCKED });
+            Color color = (Color)AccessTools.Method("forgotten_construction_set.StateColours:GetStateColor").Invoke(null, new object[] { (Enum)Enum.Parse(AccessTools.TypeByName("forgotten_construction_set.GameData+State"), "LOCKED") });
             bool enabled = grid.SelectedItem.TextColour != color && !___nav.ReadOnly;
             ___revertItem.Enabled = enabled;
             ___removeItem.Enabled = enabled;
