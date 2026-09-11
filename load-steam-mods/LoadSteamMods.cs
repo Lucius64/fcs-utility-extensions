@@ -19,8 +19,6 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Xml.Linq;
-using static System.Net.Mime.MediaTypeNames;
 
 namespace load_steam_mods
 {
@@ -37,10 +35,61 @@ namespace load_steam_mods
 
         static readonly Dictionary<string, string> steamModList = new Dictionary<string, string>();
 
+        static void InitSteamModList(string modDir)
+        {
+            Type type = AccessTools.TypeByName("forgotten_construction_set.SteamManager");
+            if (type == null)
+                return;
+
+            steamModList.Clear();
+
+            object steamManager = AccessTools.PropertyGetter(type, "Instance").Invoke(null, null);
+            if (!(AccessTools.PropertyGetter("forgotten_construction_set.SteamManager:Enabled").Invoke(steamManager, null) is bool enabled) || !enabled)
+                return;
+
+            HashSet<string> modList = new HashSet<string>();
+            {
+                var directory = new DirectoryInfo(modDir);
+                if (directory.Exists)
+                {
+                    foreach (DirectoryInfo dir in directory.GetDirectories())
+                    {
+                        FileInfo[] files = dir.GetFiles(dir.Name + ".mod");
+                        if (files.Length != 0)
+                            modList.Add(files[0].Name);
+                    }
+                }
+            }
+
+            uint numItems = SteamUGC.GetNumSubscribedItems();
+            PublishedFileId_t[] items = new PublishedFileId_t[numItems];
+            SteamUGC.GetSubscribedItems(items, numItems);
+            foreach (PublishedFileId_t item in items)
+            {
+                if ((SteamUGC.GetItemState(item) & (uint)EItemState.k_EItemStateInstalled) > 0)
+                {
+                    if (SteamUGC.GetItemInstallInfo(item, out _, out string folder, 260, out _))
+                    {
+                        var directory = new DirectoryInfo(folder);
+                        if (directory.Exists)
+                        {
+                            FileInfo[] files = directory.GetFiles("*.mod");
+                            if (files.Length != 0)
+                            {
+                                string filename = files[0].Name;
+                                if (!modList.Contains(filename))
+                                    steamModList.Add(filename, directory.FullName.Replace("\\", "/"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         [HarmonyPatch]
         public static class InheritFiles_Constructor_Patch
         {
-            static System.Reflection.MethodBase TargetMethod()
+            static MethodBase TargetMethod()
             {
                 return AccessTools.Constructor(
                     AccessTools.TypeByName("forgotten_construction_set.InheritFiles"),
@@ -53,18 +102,11 @@ namespace load_steam_mods
             }
 
             [HarmonyPostfix]
-            static void Postfix(object __instance, string baseDir, TreeView ___modList, HashSet<string> ___defaultChecked)
+            static void Postfix(object __instance, string baseDir, string modDir, TreeView ___modList, HashSet<string> ___defaultChecked)
             {
-                steamModList.Clear();
+                InitSteamModList(modDir);
 
-                object SteamManager_Instance = AccessTools.PropertyGetter("forgotten_construction_set.SteamManager:Instance").Invoke(null, null);
-                if (SteamManager_Instance == null)
-                    return;
-
-                if (!(AccessTools.PropertyGetter("forgotten_construction_set.SteamManager:Enabled").Invoke(SteamManager_Instance, null) is bool enabled))
-                    return;
-
-                if (!enabled)
+                if (steamModList.Count < 1)
                     return;
 
                 string[] activeMods = { };
@@ -89,42 +131,20 @@ namespace load_steam_mods
                 var loadHeader = AccessTools.Method("forgotten_construction_set.GameData:loadHeader");
                 var createToolTip = AccessTools.Method("forgotten_construction_set.InheritFiles:createToolTip");
 
-                uint numItems = SteamUGC.GetNumSubscribedItems();
-                PublishedFileId_t[] items = new PublishedFileId_t[numItems];
-                SteamUGC.GetSubscribedItems(items, numItems);
-                foreach (PublishedFileId_t item in items)
+                foreach (var mod in steamModList)
                 {
-                    if ((SteamUGC.GetItemState(item) & (uint)EItemState.k_EItemStateInstalled) > 0)
+                    var header = loadHeader.Invoke(null, new object[] { Path.Combine(mod.Value, mod.Key) });
+
+                    TreeNode treeNode = new TreeNode(mod.Key)
                     {
-                        if (SteamUGC.GetItemInstallInfo(item, out ulong size, out string folder, 260, out uint timestamp))
-                        {
-                            var directory = new DirectoryInfo(folder);
-                            if (directory.Exists)
-                            {
-                                FileInfo[] files = directory.GetFiles("*.mod");
-                                if (files.Length != 0)
-                                {
-                                    string filename = files[0].Name;
-                                    if (!modNodePairs.ContainsKey(filename))
-                                    {
-                                        var header = loadHeader.Invoke(null, new object[] { files[0].FullName });
+                        ForeColor = ForeColor,
+                        Tag = header
+                    };
 
-                                        TreeNode treeNode = new TreeNode(filename)
-                                        {
-                                            ForeColor = ForeColor,
-                                            Tag = header
-                                        };
+                    if (createToolTip.Invoke(__instance, new object[] { treeNode.Text, header }) is string toolTip)
+                        treeNode.ToolTipText = toolTip;
 
-                                        if (createToolTip.Invoke(__instance, new object[] { treeNode.Text, header }) is string toolTip)
-                                            treeNode.ToolTipText = toolTip;
-
-                                        modNodePairs.Add(filename, treeNode);
-                                        steamModList.Add(filename, directory.FullName.Replace("\\", "/"));
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    modNodePairs.Add(mod.Key, treeNode);
                 }
 
                 ___modList.Nodes.Clear();
@@ -150,9 +170,9 @@ namespace load_steam_mods
         public static class InheritFiles_loadButton_Click_Patch
         {
             [HarmonyPrefix]
-            static bool Prefix(object __instance, TreeNode ___activeNode)
+            static bool Prefix(TreeNode ___activeNode)
             {
-                if (steamModList.TryGetValue(___activeNode.Text, out var dir))
+                if (steamModList.TryGetValue(___activeNode.Text, out _))
                 {
                     MessageBox.Show("Error : Steam mods cannot be edited.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Hand);
                     return false;
@@ -162,9 +182,9 @@ namespace load_steam_mods
         }
 
         [HarmonyPatch]
-        public static class navigation_Constructor_Patch
+        public static class Navigation_Constructor_Patch
         {
-            static System.Reflection.MethodBase TargetMethod()
+            static MethodBase TargetMethod()
             {
                 return AccessTools.Constructor(AccessTools.TypeByName("forgotten_construction_set.navigation"));
             }
@@ -172,11 +192,11 @@ namespace load_steam_mods
             [HarmonyPostfix]
             static void Postfix()
             {
-                harmony.Patch(AccessTools.Method("forgotten_construction_set.baseForm:addLoadedFile"), prefix: new HarmonyMethod(typeof(baseForm_addLoadedFile_Patch).GetMethod("Prefix")));
+                harmony.Patch(AccessTools.Method("forgotten_construction_set.baseForm:addLoadedFile"), prefix: new HarmonyMethod(typeof(BaseForm_addLoadedFile_Patch).GetMethod("Prefix")));
             }
         }
 
-        public static class baseForm_addLoadedFile_Patch
+        public static class BaseForm_addLoadedFile_Patch
         {
             [HarmonyPrefix]
             public static void Prefix(ref string path, string file)
@@ -202,27 +222,31 @@ namespace load_steam_mods
             }
 
             [HarmonyPostfix]
-            static void Postfix(object nav, ComboBox ___modBox)
+            static void Postfix(dynamic nav, ComboBox ___modBox)
             {
-                if ((int)AccessTools.PropertyGetter("forgotten_construction_set.navigation:FileMode").Invoke(nav, null) != 0
+                if (nav.FileMode != 0
                     && !(bool)AccessTools.PropertyGetter("forgotten_construction_set.TranslationManager:TranslationMode").Invoke(null, null))
                 {
-                    if (0 < steamModList.Count)
+                    if (nav.RootPath == null || nav.ModFolderName == null)
+                        return;
+
+                    InitSteamModList(Path.Combine(nav.RootPath, nav.ModFolderName));
+                    if (steamModList.Count < 1)
+                        return;
+
+                    foreach (var mod in steamModList)
                     {
-                        foreach (var mod in steamModList)
+                        FileInfo fileInfo = new FileInfo(mod.Value + "/" + mod.Key);
+                        if (fileInfo.Exists)
                         {
-                            FileInfo fileInfo = new FileInfo(mod.Value + "/" + mod.Key);
-                            if (fileInfo.Exists)
-                            {
-                                var ModListItem = AccessTools.Constructor(
-                                    AccessTools.TypeByName("forgotten_construction_set.MergeDialog+ModListItem"),
-                                    new Type[]
-                                    {
+                            var ModListItem = AccessTools.Constructor(
+                                AccessTools.TypeByName("forgotten_construction_set.MergeDialog+ModListItem"),
+                                new Type[]
+                                {
                                         typeof(string),
                                         typeof(string)
-                                    });
-                                ___modBox.Items.Add(ModListItem.Invoke(new object[] { fileInfo.Name, fileInfo.FullName.Replace('\\', '/') }));
-                            }
+                                });
+                            ___modBox.Items.Add(ModListItem.Invoke(new object[] { fileInfo.Name, fileInfo.FullName.Replace('\\', '/') }));
                         }
                     }
                 }
