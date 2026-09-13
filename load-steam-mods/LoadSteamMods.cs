@@ -197,6 +197,7 @@ namespace load_steam_mods
         {
             Harmony harmony = new Harmony("load-steam-mods");
             harmony.Patch(AccessTools.Method("forgotten_construction_set.baseForm:addLoadedFile"), prefix: new HarmonyMethod(typeof(BaseForm_addLoadedFile_Patch).GetMethod("Prefix")));
+            harmony.Patch(AccessTools.Method("forgotten_construction_set.navigation:validateFile"), prefix: new HarmonyMethod(typeof(Navigation_validateFile_Patch).GetMethod("Prefix")));
         }
     }
 
