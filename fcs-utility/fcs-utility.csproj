@@ -48,8 +48,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConversationPatch.cs" />
+    <Compile Include="FilePropertyPatch.cs" />
     <Compile Include="ReferenceListPatch.cs" />
-    <Compile Include="Enumscs.cs" />
     <Compile Include="FCSUtilitiesPlugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

@@ -19,4 +19,20 @@ namespace fcs_utility
             return 0;
         }
     }
+
+    [HarmonyPatch]
+    static class Navigation_Constructor_Patch
+    {
+        static MethodBase TargetMethod()
+        {
+            return AccessTools.Constructor(AccessTools.TypeByName("forgotten_construction_set.navigation"));
+        }
+
+        [HarmonyPostfix]
+        static void Postfix()
+        {
+            Harmony harmony = new Harmony("fcs-utilities");
+            harmony.Patch(AccessTools.Method("forgotten_construction_set.navigation:validateFile"), prefix: new HarmonyMethod(typeof(Navigation_validateFile_Patch).GetMethod("Prefix")));
+        }
+    }
 }
