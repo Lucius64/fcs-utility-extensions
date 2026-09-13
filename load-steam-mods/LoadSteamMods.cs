@@ -24,30 +24,32 @@ namespace load_steam_mods
 {
     public class LoadSteamModsPlugin : IPlugin
     {
-        static readonly Harmony harmony = new Harmony("load-steam-mods");
-
         public int Init(Assembly assembly)
         {
+            Harmony harmony = new Harmony("load-steam-mods");
             harmony.PatchAll();
             Console.WriteLine("load-steam-mods plugin loaded.");
             return 0;
         }
+    }
 
-        static readonly Dictionary<string, string> steamModList = new Dictionary<string, string>();
+    static class SteamMods
+    {
+        internal static readonly Dictionary<string, string> list = new Dictionary<string, string>();
 
-        static void InitSteamModList(string modDir)
+        internal static void Reflesh(string modDir)
         {
             Type type = AccessTools.TypeByName("forgotten_construction_set.SteamManager");
             if (type == null)
                 return;
 
-            steamModList.Clear();
+            list.Clear();
 
             object steamManager = AccessTools.PropertyGetter(type, "Instance").Invoke(null, null);
             if (!(AccessTools.PropertyGetter("forgotten_construction_set.SteamManager:Enabled").Invoke(steamManager, null) is bool enabled) || !enabled)
                 return;
 
-            HashSet<string> modList = new HashSet<string>();
+            HashSet<string> mods = new HashSet<string>();
             {
                 var directory = new DirectoryInfo(modDir);
                 if (directory.Exists)
@@ -56,7 +58,7 @@ namespace load_steam_mods
                     {
                         FileInfo[] files = dir.GetFiles(dir.Name + ".mod");
                         if (files.Length != 0)
-                            modList.Add(files[0].Name);
+                            mods.Add(files[0].Name);
                     }
                 }
             }
@@ -77,180 +79,195 @@ namespace load_steam_mods
                             if (files.Length != 0)
                             {
                                 string filename = files[0].Name;
-                                if (!modList.Contains(filename))
-                                    steamModList.Add(filename, directory.FullName.Replace("\\", "/"));
+                                if (!mods.Contains(filename))
+                                    list.Add(filename, directory.FullName.Replace("\\", "/"));
                             }
                         }
                     }
                 }
             }
         }
+    }
 
-        [HarmonyPatch]
-        public static class InheritFiles_Constructor_Patch
+    [HarmonyPatch]
+    static class InheritFiles_Constructor_Patch
+    {
+        static MethodBase TargetMethod()
         {
-            static MethodBase TargetMethod()
-            {
-                return AccessTools.Constructor(
-                    AccessTools.TypeByName("forgotten_construction_set.InheritFiles"),
-                    new Type[]
-                    {
+            return AccessTools.Constructor(
+                AccessTools.TypeByName("forgotten_construction_set.InheritFiles"),
+                new Type[]
+                {
                         AccessTools.TypeByName("forgotten_construction_set.baseForm"),
                         typeof(string),
                         typeof(string)
-                    });
-            }
-
-            [HarmonyPostfix]
-            static void Postfix(object __instance, string baseDir, string modDir, TreeView ___modList, HashSet<string> ___defaultChecked)
-            {
-                InitSteamModList(modDir);
-
-                if (steamModList.Count < 1)
-                    return;
-
-                string[] activeMods = { };
-                try
-                {
-                    activeMods = File.ReadAllLines(Path.Combine(baseDir, "mods.cfg"));
-                }
-                catch (Exception)
-                {
-                }
-
-                SortedDictionary<string, TreeNode> modNodePairs = new SortedDictionary<string, TreeNode>();
-
-                foreach (TreeNode node in ___modList.Nodes)
-                {
-                    modNodePairs.Add(node.Text, node);
-                }
-
-                if (!(AccessTools.PropertyGetter("forgotten_construction_set.InheritFiles:ForeColor").Invoke(__instance, null) is Color ForeColor))
-                    return;
-
-                var loadHeader = AccessTools.Method("forgotten_construction_set.GameData:loadHeader");
-                var createToolTip = AccessTools.Method("forgotten_construction_set.InheritFiles:createToolTip");
-
-                foreach (var mod in steamModList)
-                {
-                    var header = loadHeader.Invoke(null, new object[] { Path.Combine(mod.Value, mod.Key) });
-
-                    TreeNode treeNode = new TreeNode(mod.Key)
-                    {
-                        ForeColor = ForeColor,
-                        Tag = header
-                    };
-
-                    if (createToolTip.Invoke(__instance, new object[] { treeNode.Text, header }) is string toolTip)
-                        treeNode.ToolTipText = toolTip;
-
-                    modNodePairs.Add(mod.Key, treeNode);
-                }
-
-                ___modList.Nodes.Clear();
-                foreach (var modName in activeMods)
-                {
-                    if (modNodePairs.TryGetValue(modName, out var node))
-                    {
-                        node.Checked = true;
-                        ___modList.Nodes.Add(node);
-                        ___defaultChecked.Add(modName);
-                        modNodePairs.Remove(modName);
-                    }
-                }
-
-                foreach (var modNodePair in modNodePairs)
-                {
-                    ___modList.Nodes.Add(modNodePair.Value);
-                }
-            }
+                });
         }
 
-        [HarmonyPatch("forgotten_construction_set.InheritFiles", "loadButton_Click")]
-        public static class InheritFiles_loadButton_Click_Patch
+        [HarmonyPostfix]
+        static void Postfix(object __instance, string baseDir, string modDir, TreeView ___modList, HashSet<string> ___defaultChecked)
         {
-            [HarmonyPrefix]
-            static bool Prefix(TreeNode ___activeNode)
+            SteamMods.Reflesh(modDir);
+
+            if (SteamMods.list.Count < 1)
+                return;
+
+            string[] activeMods = { };
+            try
             {
-                if (steamModList.TryGetValue(___activeNode.Text, out _))
+                activeMods = File.ReadAllLines(Path.Combine(baseDir, "mods.cfg"));
+            }
+            catch (Exception)
+            {
+            }
+
+            SortedDictionary<string, TreeNode> modNodePairs = new SortedDictionary<string, TreeNode>();
+
+            foreach (TreeNode node in ___modList.Nodes)
+            {
+                modNodePairs.Add(node.Text, node);
+            }
+
+            if (!(AccessTools.PropertyGetter("forgotten_construction_set.InheritFiles:ForeColor").Invoke(__instance, null) is Color ForeColor))
+                return;
+
+            var loadHeader = AccessTools.Method("forgotten_construction_set.GameData:loadHeader");
+            var createToolTip = AccessTools.Method("forgotten_construction_set.InheritFiles:createToolTip");
+
+            foreach (var mod in SteamMods.list)
+            {
+                var header = loadHeader.Invoke(null, new object[] { Path.Combine(mod.Value, mod.Key) });
+
+                TreeNode treeNode = new TreeNode(mod.Key)
                 {
-                    MessageBox.Show("Error : Steam mods cannot be edited.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Hand);
-                    return false;
+                    ForeColor = ForeColor,
+                    Tag = header
+                };
+
+                if (createToolTip.Invoke(__instance, new object[] { treeNode.Text, header }) is string toolTip)
+                    treeNode.ToolTipText = toolTip;
+
+                modNodePairs.Add(mod.Key, treeNode);
+            }
+
+            ___modList.Nodes.Clear();
+            foreach (var modName in activeMods)
+            {
+                if (modNodePairs.TryGetValue(modName, out var node))
+                {
+                    node.Checked = true;
+                    ___modList.Nodes.Add(node);
+                    ___defaultChecked.Add(modName);
+                    modNodePairs.Remove(modName);
                 }
-                return true;
+            }
+
+            foreach (var modNodePair in modNodePairs)
+            {
+                ___modList.Nodes.Add(modNodePair.Value);
             }
         }
+    }
 
-        [HarmonyPatch]
-        public static class Navigation_Constructor_Patch
+    [HarmonyPatch("forgotten_construction_set.InheritFiles", "loadButton_Click")]
+    static class InheritFiles_loadButton_Click_Patch
+    {
+        [HarmonyPrefix]
+        static bool Prefix(TreeNode ___activeNode)
         {
-            static MethodBase TargetMethod()
+            if (SteamMods.list.TryGetValue(___activeNode.Text, out _))
             {
-                return AccessTools.Constructor(AccessTools.TypeByName("forgotten_construction_set.navigation"));
+                MessageBox.Show("Error : Steam mods cannot be edited.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+                return false;
             }
+            return true;
+        }
+    }
 
-            [HarmonyPostfix]
-            static void Postfix()
-            {
-                harmony.Patch(AccessTools.Method("forgotten_construction_set.baseForm:addLoadedFile"), prefix: new HarmonyMethod(typeof(BaseForm_addLoadedFile_Patch).GetMethod("Prefix")));
-            }
+    [HarmonyPatch]
+    static class Navigation_Constructor_Patch
+    {
+        static MethodBase TargetMethod()
+        {
+            return AccessTools.Constructor(AccessTools.TypeByName("forgotten_construction_set.navigation"));
         }
 
-        public static class BaseForm_addLoadedFile_Patch
+        [HarmonyPostfix]
+        static void Postfix()
         {
-            [HarmonyPrefix]
-            public static void Prefix(ref string path, string file)
-            {
-                if (!Directory.Exists(path))
-                    if (steamModList.TryGetValue(file, out string dir))
-                        path = dir + "/";
-            }
+            Harmony harmony = new Harmony("load-steam-mods");
+            harmony.Patch(AccessTools.Method("forgotten_construction_set.baseForm:addLoadedFile"), prefix: new HarmonyMethod(typeof(BaseForm_addLoadedFile_Patch).GetMethod("Prefix")));
         }
+    }
 
-        [HarmonyPatch]
-        public static class MergeDialog_Constructor_Patch
+    static class BaseForm_addLoadedFile_Patch
+    {
+        [HarmonyPrefix]
+        public static void Prefix(ref string path, string file)
         {
-            static System.Reflection.MethodBase TargetMethod()
-            {
-                return AccessTools.Constructor(
-                    AccessTools.TypeByName("forgotten_construction_set.MergeDialog"),
-                    new Type[]
-                    {
+            if (!Directory.Exists(path))
+                if (SteamMods.list.TryGetValue(file, out string dir))
+                    path = dir + "/";
+        }
+    }
+
+    [HarmonyPatch]
+    static class MergeDialog_Constructor_Patch
+    {
+        static System.Reflection.MethodBase TargetMethod()
+        {
+            return AccessTools.Constructor(
+                AccessTools.TypeByName("forgotten_construction_set.MergeDialog"),
+                new Type[]
+                {
                         AccessTools.TypeByName("forgotten_construction_set.GameData"),
                         AccessTools.TypeByName("forgotten_construction_set.navigation")
-                    });
-            }
+                });
+        }
 
-            [HarmonyPostfix]
-            static void Postfix(dynamic nav, ComboBox ___modBox)
+        [HarmonyPostfix]
+        static void Postfix(dynamic nav, ComboBox ___modBox)
+        {
+            if (nav.FileMode != 0
+                && !(bool)AccessTools.PropertyGetter("forgotten_construction_set.TranslationManager:TranslationMode").Invoke(null, null))
             {
-                if (nav.FileMode != 0
-                    && !(bool)AccessTools.PropertyGetter("forgotten_construction_set.TranslationManager:TranslationMode").Invoke(null, null))
+                if (nav.RootPath == null || nav.ModFolderName == null)
+                    return;
+
+                SteamMods.Reflesh(Path.Combine(nav.RootPath, nav.ModFolderName));
+                if (SteamMods.list.Count < 1)
+                    return;
+
+                foreach (var mod in SteamMods.list)
                 {
-                    if (nav.RootPath == null || nav.ModFolderName == null)
-                        return;
-
-                    InitSteamModList(Path.Combine(nav.RootPath, nav.ModFolderName));
-                    if (steamModList.Count < 1)
-                        return;
-
-                    foreach (var mod in steamModList)
+                    FileInfo fileInfo = new FileInfo(mod.Value + "/" + mod.Key);
+                    if (fileInfo.Exists)
                     {
-                        FileInfo fileInfo = new FileInfo(mod.Value + "/" + mod.Key);
-                        if (fileInfo.Exists)
-                        {
-                            var ModListItem = AccessTools.Constructor(
-                                AccessTools.TypeByName("forgotten_construction_set.MergeDialog+ModListItem"),
-                                new Type[]
-                                {
+                        var ModListItem = AccessTools.Constructor(
+                            AccessTools.TypeByName("forgotten_construction_set.MergeDialog+ModListItem"),
+                            new Type[]
+                            {
                                         typeof(string),
                                         typeof(string)
-                                });
-                            ___modBox.Items.Add(ModListItem.Invoke(new object[] { fileInfo.Name, fileInfo.FullName.Replace('\\', '/') }));
-                        }
+                            });
+                        ___modBox.Items.Add(ModListItem.Invoke(new object[] { fileInfo.Name, fileInfo.FullName.Replace('\\', '/') }));
                     }
                 }
             }
+        }
+    }
+
+    [HarmonyPatch("forgotten_construction_set.MergeDialog", "getLevelDataFolder")]
+    static class MergeDialog_getLevelDataFolder_Patch
+    {
+        [HarmonyPostfix]
+        static void Postfix(string modPath, ref string __result)
+        {
+            if (SteamMods.list.Count < 1)
+                return;
+
+            if (SteamMods.list.TryGetValue(Path.GetFileName(modPath), out string dir))
+                __result = dir.Replace("\\", "/") + "/leveldata/";
         }
     }
 }
