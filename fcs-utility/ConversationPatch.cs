@@ -22,10 +22,30 @@ namespace fcs_utility
     static class Conversation_InitializeComponent_Patch
     {
         [HarmonyPostfix]
-        static void Postfix(NumericUpDown ___effectValue)
+        static void Postfix(
+            dynamic __instance,
+            NumericUpDown ___effectValue,
+            ContextMenuStrip ___contextMenu)
         {
             ___effectValue.Maximum = 10000000;
             ___effectValue.Minimum = -10000000;
+
+            var toolStripSeparator = new ToolStripSeparator
+            {
+                Name = "CustomToolStripSeparator",
+                Size = new System.Drawing.Size(176, 6)
+            };
+            ___contextMenu.Items.Add(toolStripSeparator);
+
+            var addMissingFields = new ToolStripMenuItem
+            {
+                Name = "addMissingFields",
+                Size = new System.Drawing.Size(179, 22),
+                Text = "Add Missing Fields"
+            };
+            ___contextMenu.Items.Add(addMissingFields);
+            var handler = Delegate.CreateDelegate(typeof(EventHandler), __instance, AccessTools.Method("forgotten_construction_set.conversation:addFailNode_Click"));
+            AccessTools.Event(typeof(ToolStripMenuItem), "Click").AddEventHandler(addMissingFields, handler);
         }
     }
 
@@ -193,6 +213,31 @@ namespace fcs_utility
             ___objectPropertyBox1.refresh(__instance.SelectedItem);
 
             return false;
+        }
+    }
+
+    [HarmonyPatch("forgotten_construction_set.conversation", "addFailNode_Click")]
+    static class Conversation_addFailNode_Click_Patch
+    {
+        [HarmonyPrefix]
+        static bool Prefix(
+            dynamic __instance,
+            object sender,
+            dynamic ___lineProperties)
+        {
+            if (sender is ToolStripMenuItem menuItem && menuItem.Name == "addMissingFields" && __instance.SelectedItem != null)
+            {
+                if (AccessTools.Method("forgotten_construction_set.MergeDialog:displayWarningIfActiveMerge").Invoke(null, null) is bool displayWarningIfActiveMerge
+                    && !displayWarningIfActiveMerge
+                    && __instance.SelectedItem.setMissingValues() > 0)
+                {
+                    ___lineProperties.refresh(__instance.SelectedItem);
+                    __instance.nav.refreshListView();
+                    __instance.nav.HasChanges = true;
+                }
+                return false;
+            }
+            return true;
         }
     }
 }
