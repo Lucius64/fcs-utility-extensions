@@ -255,12 +255,6 @@ namespace fcs_utility
             if (!found)
                 throw new ArgumentException("Cannot find Callvirt forgotten_construction_set.dialog.ConditionControl.addCondition_Click in forgotten_construction_set.dialog.ConditionControl.updateCondition");
 
-            for (int i = 0; i < codeInstructions.Count; i++)
-            {
-                var instruction = codeInstructions[i];
-                Console.WriteLine($"{i}: opcode: {instruction.opcode}, operand: {instruction.operand}");
-            }
-
             return codeInstructions;
         }
     }
