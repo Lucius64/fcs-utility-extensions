@@ -52,6 +52,7 @@
     <Compile Include="ReferenceListPatch.cs" />
     <Compile Include="FCSUtilitiesPlugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="UndoSystemPatch.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="BFrizzleFoShizzle.FCS_extended.Plugin">
