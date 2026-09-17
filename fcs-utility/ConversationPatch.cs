@@ -240,4 +240,92 @@ namespace fcs_utility
             return true;
         }
     }
+
+    [HarmonyPatch("forgotten_construction_set.conversation", "calculateScore")]
+    static class Conversation_calculateScore_Patch
+    {
+        [HarmonyPrefix]
+        static bool Prefix(
+            dynamic line,
+            ref int __result)
+        {
+            int score = 0;
+
+            int talkerEnum = line.ContainsKey("speaker") ? line.idata["speaker"] : 0;
+            if (talkerEnum != 0)
+                score++;
+
+            if (line.ContainsKey("score bonus"))
+                score += line.idata["score bonus"];
+
+            if (line.ContainsKey("locked") && line.bdata["locked"])
+                score += 2;
+
+            foreach (string referenceName in line.referenceLists())
+            {
+                if (referenceName == "give item")
+                {
+                    if (0 < line.getReferenceCount(referenceName))
+                        score += 2;
+                }
+                else if (referenceName == "target has item" || referenceName == "world state")
+                {
+                    int hasItemCount = line.getReferenceCount(referenceName);
+                    if (0 < hasItemCount)
+                        score += hasItemCount * 2;
+                }
+                else if (referenceName == "target race")
+                {
+                    if (0 < line.getReferenceCount(referenceName))
+                        score += 4;
+                }
+                else if (referenceName == "conditions")
+                {
+                    foreach (var gamedataReference in line.referenceItems("conditions"))
+                    {
+                        var item = gamedataReference.Item1;
+                        if (item == null || (int)item.type != 31)
+                            continue;
+
+                        score++;
+
+                        int actionName = item.ContainsKey("condition name") ? item.idata["condition name"] : 0;
+                        if (actionName == 23 || actionName == 26)
+                        {
+                            if (gamedataReference.Item2.v0 == 1)
+                                score ++;
+                        }
+
+                    }
+                }
+                else
+                {
+                    if (0 < line.getReferenceCount(referenceName))
+                    {
+                        dynamic desc = AccessTools.Method("forgotten_construction_set.GameData:getDesc", new Type[] { AccessTools.TypeByName("forgotten_construction_set.itemType"), typeof(string) }).Invoke(null, new object[] { line.type, referenceName });
+                        if (desc.description.Contains("condition"))
+                            score += 2;
+                    }
+                }
+            }
+
+            if (line.ContainsKey("unique") && line.bdata["unique"])
+                score ++;
+
+            if (line.ContainsKey("chance permanent") && line.fdata["chance permanent"] < 99f)
+                score++;
+
+            if (line.ContainsKey("target is type") && 0 < line.idata["target is type"])
+                score++;
+
+            if (AccessTools.Method("forgotten_construction_set.conversation:isInterjector").Invoke(null, new object[] { line }) is bool isInterjector && isInterjector)
+                score += 2;
+
+            if (2 < talkerEnum && talkerEnum < 7)
+                score++;
+
+            __result = score;
+            return false;
+        }
+    }
 }
